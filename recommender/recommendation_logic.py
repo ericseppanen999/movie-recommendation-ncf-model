@@ -1,142 +1,258 @@
-import pandas as pd
-import numpy as np
 import os
-from sklearn.model_selection import train_test_split
+import random
+import numpy as np
+import pandas as pd
 import tensorflow as tf
-from tensorflow.keras.layers import Input, Embedding, Flatten, Concatenate, Dense, Dropout
+
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.layers import Input, Embedding, Flatten, Dense, Dropout, Concatenate
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import Model
 
+# custom scaling layer
+class RatingScale(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-
-# define paths to the data files
-BASE_DIR=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MOVIES_PATH=os.path.join(BASE_DIR,'recommender/static/data/movies.csv')
-RATINGS_PATH=os.path.join(BASE_DIR,'recommender/static/data/ratings.csv')
-
-
-
-# Load datasets
-movies = pd.read_csv(MOVIES_PATH)
-ratings = pd.read_csv(RATINGS_PATH)
+    def call(self, inputs, **kwargs):
+        return inputs*4.5+0.5
 
 
 
-# create mappings for user ids and movie ids to indices for embedding layers
-user_map={id:idx for idx,id in enumerate(ratings['userId'].unique())}
-movie_map={id:idx for idx,id in enumerate(ratings['movieId'].unique())}
-reverse_movie_map={v:k for k,v in movie_map.items()} # reverse mapping to get original movie ids
+# global settings
+MODEL_PATH="ncf_model.keras"
+EMBED_DIM=32
+BATCH_SIZE=64
+EPOCHS=10
+TOP_K_CANDIDATES=30
 
 
 
-# replace user ids and movie ids in the ratings dataframe with their mapped indices
-ratings['userId']=ratings['userId'].map(user_map)
-ratings['movieId']=ratings['movieId'].map(movie_map)
+# load data
+BASE_DIR=os.path.dirname(os.path.abspath(__file__))
+MOVIES_PATH=os.path.join(BASE_DIR, "static/data/movies.csv")
+RATINGS_PATH=os.path.join(BASE_DIR, "static/data/ratings.csv")
 
 
 
-# split the data into training and test sets
-train,test=train_test_split(ratings,test_size=0.2,random_state=42)
+movies=pd.read_csv(MOVIES_PATH)
+ratings=pd.read_csv(RATINGS_PATH)
 
 
 
-# define the ncf model
-def build_ncf_model(num_users,num_movies,embedding_dim=50):
+unique_user_ids=ratings["userId"].unique()
+unique_movie_ids=ratings["movieId"].unique()
 
-    # create user embedding layer
-    user_input=Input(shape=(1,),name='user_input')
-    user_embedding=Embedding(num_users,embedding_dim,name='user_embedding')(user_input)
-    user_vec=Flatten(name='flatten_user')(user_embedding)
 
-    # create movie embedding layer
-    movie_input=Input(shape=(1,),name='movie_input')
-    movie_embedding=Embedding(num_movies,embedding_dim,name='movie_embedding')(movie_input)
-    movie_vec=Flatten(name='flatten_movie')(movie_embedding)
 
-    # concatenate user and movie vectors and pass through dense layers
-    concat=Concatenate()([user_vec,movie_vec])
-    dense=Dense(128,activation='relu')(concat)
-    dense=Dropout(0.3)(dense)
-    dense=Dense(64,activation='relu')(dense)
-    output=Dense(1,activation='sigmoid')(dense)  # prediction, changed to sigmoid
+user_map={uid: idx for idx, uid in enumerate(unique_user_ids)}
+movie_map={mid: idx for idx, mid in enumerate(unique_movie_ids)}
+reverse_movie_map={v: k for k, v in movie_map.items()}
 
-    # scale the output to match the rating range (0.5 to 5.0)
-    scaled_output=tf.keras.layers.Lambda(lambda x:x*4.5+0.5)(output) # ?
 
-    # compile the model
-    model=Model(inputs=[user_input,movie_input],outputs=scaled_output)
-    model.compile(optimizer='adam',loss='mse',metrics=['mae'])
+
+ratings["userId"]=ratings["userId"].map(user_map)
+ratings["movieId"]=ratings["movieId"].map(movie_map)
+
+
+
+num_users=len(user_map)
+num_movies=len(movie_map)
+
+
+
+# build a fresh model every time
+def build_ncf_model(num_users, num_movies, embed_dim=32):
+    """
+    build a neural collaborative filtering model
+    - create input layers for users and movies
+    - add embedding layers for users and movies
+    - flatten the embeddings
+    - concatenate the user and movie vectors
+    - add dense and dropout layers
+    - output a single rating prediction
+    - compile the model with adam optimizer and mse loss
+    """
+    user_input=Input(shape=(1,), name="user_input")
+    movie_input=Input(shape=(1,), name="movie_input")
+
+    user_emb=Embedding(input_dim=num_users, output_dim=embed_dim, embeddings_regularizer=l2(1e-6), name="user_embedding")(user_input)
+    movie_emb=Embedding(input_dim=num_movies, output_dim=embed_dim, embeddings_regularizer=l2(1e-6), name="movie_embedding")(movie_input)
+
+    user_vec=Flatten(name="flatten_user")(user_emb)
+    movie_vec=Flatten(name="flatten_movie")(movie_emb)
+    concat_vec=Concatenate(name="concat_user_movie")([user_vec, movie_vec])
+
+    x=Dense(128, activation='relu', kernel_regularizer=l2(1e-5))(concat_vec)
+    x=Dropout(0.4)(x)
+    x=Dense(64, activation='relu', kernel_regularizer=l2(1e-5))(x)
+    x=Dropout(0.4)(x)
+    x=Dense(1, activation='sigmoid')(x)
+    out=RatingScale(name="rating_scale")(x)
+
+    model=Model(inputs=[user_input, movie_input], outputs=out)
+    model.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss="mse", metrics=["mae"])
     return model
 
 
 
-# build and train the ncf model
-num_users=len(user_map)
-num_movies=len(movie_map)
-embedding_dim=50
+print("building a fresh model and training it on startup...")
 
 
 
-ncf_model=build_ncf_model(num_users,num_movies,embedding_dim)
+ncf_model=build_ncf_model(num_users, num_movies, EMBED_DIM)
+
+# train on startup
+train_df, test_df=train_test_split(ratings, test_size=0.2, random_state=42)
+
+train_users=train_df["userId"].values
+train_movies=train_df["movieId"].values
+train_ratings=train_df["rating"].values
+
+test_users=test_df["userId"].values
+test_movies=test_df["movieId"].values
+test_ratings=test_df["rating"].values
+
+early_stop=EarlyStopping(monitor="val_loss", patience=3, restore_best_weights=True)
+ncf_model.fit([train_users, train_movies], train_ratings, validation_data=([test_users, test_movies], test_ratings), epochs=EPOCHS, batch_size=BATCH_SIZE, callbacks=[early_stop], verbose=1)
+
+ncf_model.save(MODEL_PATH)
+print(f"model was trained and saved to: {MODEL_PATH}")
 
 
 
-# prepare input data for training
-train_user=train['userId'].values
-train_movie=train['movieId'].values
-train_rating=train['rating'].values
-test_user=test['userId'].values
-test_movie=test['movieId'].values
-test_rating=test['rating'].values
+# build a sub-model for new users
+def build_uservec_submodel(orig_model, embed_dim=32):
+    """
+    build a sub-model for user vector inference
+    - create input layers for user vector and movie id
+    - get the movie embedding layer from the original model
+    - flatten the movie embedding
+    - concatenate the user vector and movie vector
+    - add dense and dropout layers
+    - output a single rating prediction
+    - set weights from the original model to the new model
+    """
+    from tensorflow.keras.layers import Input, Flatten, Dense, Dropout, Concatenate
+
+    user_vec_input=Input(shape=(embed_dim,), name="user_vec")
+    movie_id_input=Input(shape=(1,), name="movie_id_sub")
+
+    movie_emb_layer=orig_model.get_layer("movie_embedding")
+    movie_emb_sub=movie_emb_layer(movie_id_input)
+    movie_vec_sub=Flatten()(movie_emb_sub)
+
+    merged_vec=Concatenate()([user_vec_input, movie_vec_sub])
+
+    dense_layers=[]
+    rating_layer=None
+    for layer in orig_model.layers:
+        if isinstance(layer, Dense):
+            dense_layers.append(layer)
+        elif isinstance(layer, RatingScale):
+            rating_layer=layer
+
+    new_dense_1=Dense(dense_layers[0].units, activation=dense_layers[0].activation, kernel_regularizer=dense_layers[0].kernel_regularizer)
+    new_drop_1=Dropout(0.4)
+    new_dense_2=Dense(dense_layers[1].units, activation=dense_layers[1].activation, kernel_regularizer=dense_layers[1].kernel_regularizer)
+    new_drop_2=Dropout(0.4)
+    new_out=Dense(dense_layers[2].units, activation=dense_layers[2].activation)
+    new_scale=RatingScale()
+
+    x=new_dense_1(merged_vec)
+    x=new_drop_1(x, training=False)
+    x=new_dense_2(x)
+    x=new_drop_2(x, training=False)
+    x=new_out(x)
+    out=new_scale(x)
+
+    sub_model=Model(inputs=[user_vec_input, movie_id_input], outputs=out)
+
+    _=sub_model([np.zeros((1, embed_dim), dtype=np.float32), np.zeros((1,1), dtype=np.int32)])
+
+    new_dense_1.set_weights(dense_layers[0].get_weights())
+    new_dense_2.set_weights(dense_layers[1].get_weights())
+    new_out.set_weights(dense_layers[2].get_weights())
+
+    return sub_model
 
 
 
-# train the model
-ncf_model.fit(
-    [train_user,train_movie],
-    train_rating,
-    validation_data=([test_user,test_movie], test_rating),
-    epochs=10,
-    batch_size=64
-)
+uservec_inference_model=build_uservec_submodel(ncf_model, EMBED_DIM)
 
 
 
-# save the trained model
-ncf_model.save('ncf_model.h5') # this throws warning
+# recommendation function
+def get_recommendations(user_ratings_dict, top_n=6):
+    """
+    get movie recommendations for a new user
+    - get the movie embedding matrix from the model
+    - calculate the weighted sum of movie embeddings based on user ratings
+    - normalize the user vector
+    - exclude already rated movies from candidates
+    - predict ratings for candidate movies
+    - sort and select top-n recommendations
+    - map movie ids back to original ids and get movie titles
+    """
+    movie_emb_matrix=ncf_model.get_layer("movie_embedding").get_weights()[0]
+    weighted_sum=np.zeros((EMBED_DIM,), dtype=np.float32)
+    total_rating=0.0
 
+    for orig_m_id, rating in user_ratings_dict.items():
+        if orig_m_id in movie_map:
+            mapped_m_id=movie_map[orig_m_id]
+            weighted_sum+=movie_emb_matrix[mapped_m_id]*rating
+            total_rating+=rating
 
+    if total_rating==0:
+        user_vec=np.zeros((EMBED_DIM,), dtype=np.float32)
+    else:
+        user_vec=weighted_sum/total_rating
 
-# function to get movie recommendations for a user
-def get_recommendations(user_ratings):
-    new_user_id=1 # arbitrary for us 
+    rated_mapped_ids={movie_map[m] for m in user_ratings_dict if m in movie_map}
+    all_mapped_ids=set(range(num_movies))
+    candidates=list(all_mapped_ids-rated_mapped_ids)
 
-    # map user ratings to internal indices
-    rated_movie_ids={movie_map[movie_id]:rating for movie_id,rating in user_ratings.items() if movie_id in movie_map}
+    user_vec_batch=np.tile(user_vec, (len(candidates), 1))
+    movie_batch=np.array(candidates).reshape(-1, 1)
 
-    # get all movie indices except those already rated
-    all_movie_ids=set(movie_map.values())
-    unrated_movie_ids=list(all_movie_ids-set(rated_movie_ids.keys()))
+    preds=uservec_inference_model.predict([user_vec_batch, movie_batch], verbose=0).flatten()
+    idx_score_pairs=list(zip(candidates, preds))
+    idx_score_pairs.sort(key=lambda x: x[1], reverse=True)
 
-    # predict scores for unrated movies
-    user_input=np.array([new_user_id]*len(unrated_movie_ids))
-    movie_input=np.array(unrated_movie_ids)
-    predictions=ncf_model.predict([user_input,movie_input])
+    top_30=idx_score_pairs[:TOP_K_CANDIDATES]
 
-    # combine predictions with movie ids and sort them
-    predicted_scores=list(zip(unrated_movie_ids,predictions.flatten()))
-    predicted_scores.sort(key=lambda x:x[1],reverse=True)
-    top_3=predicted_scores[:3]
+    random.shuffle(top_30)
 
-    # fetch movie titles and scores for the top 3 recommendations
-    recommendations=[]
-    for movie_id,score in top_3:
-        if movie_id in reverse_movie_map:
-            movie_title=movies[movies['movieId']==reverse_movie_map[movie_id]]
-            if not movie_title.empty:
-                recommendations.append({
-                    "title":movie_title.iloc[0]['title'],
-                    "movieId":reverse_movie_map[movie_id],
-                    "score":round(score,2)
-                })
+    chosen=top_30[:top_n]
+    chosen.sort(key=lambda x: x[1], reverse=True)
 
-    return recommendations
+    results=[]
+    for mapped_m, score in chosen:
+        orig_id_candidates=[k for k, v in movie_map.items() if v==mapped_m]
+        if not orig_id_candidates:
+            continue
+        orig_id=orig_id_candidates[0]
+        row=movies[movies["movieId"]==orig_id]
+        if not row.empty:
+            results.append({
+                "title": row.iloc[0]["title"],
+                "movieId": int(orig_id),
+                "score": round(float(score), 2)
+            })
+    return results
+
+# test demo
+'''
+if __name__=="__main__":
+    example_user_ratings={
+        1: 5.0,
+        50: 1.5,
+        32: 4.0,
+        260: 3.5,
+        589: 1.0
+    }
+    recs=get_recommendations(example_user_ratings, top_n=10)
+    print("recommended for new user:", recs)
+'''

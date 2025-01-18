@@ -25,6 +25,7 @@ base_url="https://api.themoviedb.org/3/movie/"
 def fetch_poster_url(tmdb_id):
     try:
         url = f"{base_url}{tmdb_id}api_key={TMDB_API_KEY}&language=en-US".format(tmdb_id)
+        print(url)
         headers = {
             "accept": "application/json",
             "Authorization": f"Bearer {TMDB_API_KEY}"

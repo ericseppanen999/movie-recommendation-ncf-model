@@ -1,389 +1,57 @@
+{% load static %}
+
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Movie Recommender</title>
+    <title>movie recommender</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- link to home.css -->
+    <link rel="stylesheet" href="{% static 'css/home.css' %}">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Poppins', sans-serif;
-        }
-
-        body {
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #fff;
-            padding: 2rem;
-            min-height: 100vh;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        header {
-            text-align: center;
-            margin-bottom: 3rem;
-        }
-
-        h1 {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-            background: linear-gradient(45deg, #00b4d8, #90e0ef);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .subtitle {
-            color: #ccc;
-            font-size: 1.1rem;
-        }
-
-        .movies-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 1.5rem;
-        }
-
-        .movie-card {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 15px;
-            overflow: hidden;
-            backdrop-filter: blur(10px);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            position: relative;
-        }
-
-        .movie-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-        }
-
-        .movie-poster {
-            width: 100%;
-            height: 300px;
-            object-fit: cover;
-            transition: filter 0.3s ease;
-        }
-
-        .movie-info {
-            padding: 1rem;
-        }
-
-        .movie-title {
-            font-size: 1rem;
-            font-weight: 500;
-            margin-bottom: 0.5rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            color: #fff;
-        }
-
-        .rating-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .stars {
-            display: flex;
-            flex-direction: row-reverse;
-            gap: 0.3rem;
-        }
-
-        .stars input[type="radio"] {
-            display: none;
-        }
-
-        .stars label {
-            font-size: 1.5rem;
-            color: rgba(255, 255, 255, 0.3);
-            cursor: pointer;
-            transition: color 0.2s ease;
-        }
-
-        .stars label:hover,
-        .stars label:hover ~ label,
-        .stars input[type="radio"]:checked ~ label {
-            color: #ffd700;
-        }
-
-        .card-actions {
-            display: flex;
-            justify-content: center;
-            gap: 0.5rem;
-            padding: 0.5rem;
-        }
-
-        .skip-button {
-            background: none;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: #fff;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.3s ease;
-        }
-
-        .skip-button:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: #fff;
-        }
-
-        .submit-button {
-            display: block;
-            width: 200px;
-            margin: 2rem auto;
-            padding: 1rem 2rem;
-            background: linear-gradient(45deg, #00b4d8, #90e0ef);
-            color: #fff;
-            border: none;
-            border-radius: 25px;
-            font-size: 1.1rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        .submit-button.active {
-            opacity: 1;
-            pointer-events: auto;
-            box-shadow: 0 4px 15px rgba(0, 180, 216, 0.3);
-        }
-
-        .submit-button.active:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 180, 216, 0.4);
-        }
-
-        .loading-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s ease;
-        }
-
-        .loading-overlay.active {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #00b4d8;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        @media (max-width: 1200px) {
-            .movies-grid {
-                grid-template-columns: repeat(3, 1fr);
-            }
-        }
-
-        @media (max-width: 768px) {
-            body {
-                padding: 1rem;
-            }
-
-            h1 {
-                font-size: 2rem;
-            }
-
-            .movies-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        @media (max-width: 480px) {
-            .movies-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .skip-button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            border-color: rgba(255, 255, 255, 0.1);
-        }
-    </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Rate Movies You've Watched</h1>
-            <p class="subtitle">Help us understand your taste to provide better recommendations</p>
-        </header>
-        <form method="post" id="ratings-form">
-            {% csrf_token %}
-            <div class="movies-grid">
-                {% for movie in movies %}
-                    <div class="movie-card" id="card-{{ movie.movieId }}">
-                        <img class="movie-poster" src="{{ movie.poster_url }}" alt="{{ movie.title }}">
-                        <div class="movie-info">
-                            <div class="movie-title">{{ movie.title }}</div>
-                            <div class="rating-container">
-                                <div class="stars" data-movie-id="{{ movie.movieId }}">
-                                    {% for star in stars_range %}
-                                        <input type="radio" 
-                                               id="star_{{ movie.movieId }}_{{ star }}" 
-                                               name="rating_{{ movie.movieId }}" 
-                                               value="{{ star }}" 
-                                               required
-                                               onchange="checkAllRatings()">
-                                        <label for="star_{{ movie.movieId }}_{{ star }}">★</label>
-                                    {% endfor %}
-                                </div>
-                                <button type="button" class="skip-button">
-                                    Haven't Seen It
-                                </button>
+<div class="container">
+    <header>
+        <h1>rate movies you've watched</h1>
+        <p class="subtitle">help us understand your taste to provide better recommendations</p>
+    </header>
+    <form method="post" id="ratings-form">
+        {% csrf_token %}
+        <div class="movies-grid">
+            {% for movie in movies %}
+                <div class="movie-card" id="card-{{ movie.movieId }}">
+                    <img class="movie-poster" src="{{ movie.poster_url }}" alt="{{ movie.title }}">
+                    <div class="movie-info">
+                        <div class="movie-title">{{ movie.title }}</div>
+                        <div class="rating-container">
+                            <div class="stars" data-movie-id="{{ movie.movieId }}">
+                                {% for star in stars_range %}
+                                    <input 
+                                        type="radio" 
+                                        id="star_{{ movie.movieId }}_{{ star }}" 
+                                        name="rating_{{ movie.movieId }}" 
+                                        value="{{ star }}" 
+                                        required
+                                        onchange="checkAllRatings()">
+                                    <label for="star_{{ movie.movieId }}_{{ star }}">★</label>
+                                {% endfor %}
                             </div>
-                        </div>
-                        <div class="loading-overlay">
-                            <div class="spinner"></div>
+                            <button type="button" class="skip-button">
+                                haven't seen it
+                            </button>
                         </div>
                     </div>
-                {% endfor %}
-            </div>
-            <button type="submit" class="submit-button" id="submit-button">Get Recommendations</button>
-        </form>
-    </div>
+                    <div class="loading-overlay">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        <button type="submit" class="submit-button" id="submit-button">get recommendations</button>
+    </form>
+</div>
 
-    <script>
-        function checkAllRatings() {
-            const form = document.getElementById('ratings-form');
-            const submitButton = document.getElementById('submit-button');
-            const movieCards = document.querySelectorAll('.movie-card');
-            let allRated = true;
-
-            movieCards.forEach(card => {
-                const radioButtons = card.querySelectorAll('input[type="radio"]');
-                const isRated = Array.from(radioButtons).some(radio => radio.checked);
-                if (!isRated) {
-                    allRated = false;
-                }
-            });
-
-            if (allRated) {
-                submitButton.classList.add('active');
-            } else {
-                submitButton.classList.remove('active');
-            }
-        }
-
-        async function skipMovie(movieId) {
-            const card = document.getElementById(`card-${movieId}`);
-            const loadingOverlay = card.querySelector('.loading-overlay');
-            const skipButton = card.querySelector('.skip-button');
-            
-            // Disable the skip button while loading
-            skipButton.disabled = true;
-            
-            // Show loading state
-            loadingOverlay.classList.add('active');
-            
-            try {
-                const response = await fetch(`/skip_movie/${movieId}/`, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
-                    },
-                });
-                
-                if (response.ok) {
-                    const newMovie = await response.json();
-                    if (newMovie.poster_url) {
-                        updateMovieCard(card, newMovie);
-                    } else {
-                        throw new Error('No poster URL received');
-                    }
-                } else {
-                    throw new Error('Failed to fetch new movie');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                // Show error state on the card
-                card.querySelector('.movie-title').innerHTML += ' <span style="color: #ff4444;">(Error loading new movie)</span>';
-            } finally {
-                loadingOverlay.classList.remove('active');
-                skipButton.disabled = false;
-            }
-        }
-
-        function updateMovieCard(card, newMovie) {
-            const poster = card.querySelector('.movie-poster');
-            const title = card.querySelector('.movie-title');
-            const stars = card.querySelector('.stars');
-            const skipButton = card.querySelector('.skip-button');
-            
-            // Create a new image element and only swap when it's loaded
-            const newImage = new Image();
-            newImage.onload = function() {
-                poster.src = newMovie.poster_url;
-            };
-            newImage.src = newMovie.poster_url;
-            
-            title.textContent = newMovie.title;
-            
-            // Update radio buttons
-            const radioButtons = stars.querySelectorAll('input[type="radio"]');
-            radioButtons.forEach(radio => {
-                radio.checked = false;
-                radio.name = `rating_${newMovie.movieId}`;
-                radio.id = `star_${newMovie.movieId}_${radio.value}`;
-            });
-            
-            // Update labels
-            const labels = stars.querySelectorAll('label');
-            labels.forEach((label, index) => {
-                label.htmlFor = `star_${newMovie.movieId}_${5-index}`;
-            });
-            
-            // Update skip button onclick handler
-            skipButton.onclick = () => skipMovie(newMovie.movieId);
-            
-            stars.dataset.movieId = newMovie.movieId;
-            card.id = `card-${newMovie.movieId}`;
-            
-            checkAllRatings();
-        }
-
-        // Initialize all skip buttons
-        function initializeSkipButtons() {
-            document.querySelectorAll('.movie-card').forEach(card => {
-                const movieId = card.id.split('-')[1];
-                const skipButton = card.querySelector('.skip-button');
-                skipButton.onclick = () => skipMovie(movieId);
-            });
-        }
-
-        // Run initial setup when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            checkAllRatings();
-            initializeSkipButtons();
-        });
-    </script>
+<!-- link to home.js -->
+<script src="{% static 'js/home.js' %}"></script>
 </body>
 </html>
