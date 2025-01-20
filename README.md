@@ -1,6 +1,6 @@
 # Movie Recommender Project
 
-This repository contains a simple movie recommendation web application using Django and a Neural Collaborative Filtering (NCF) model. Users can rate a set of movies, and the system will suggest new films based on their preferences.
+This repository contains a simple movie recommendation web application using Django and a Neural Collaborative Filtering (NCF) model. Users can rate a set of movies, and the system will suggest new films based on their preferences. Dataset from Movielens. Utilized TMDB API for movie posters.
 
 ---
 
